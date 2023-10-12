@@ -1,0 +1,4 @@
+# See https://rust-lang.github.io/rust-clippy/master/index.html for
+# the complete list of lints.
+
+type-complexity-threshold = 500
