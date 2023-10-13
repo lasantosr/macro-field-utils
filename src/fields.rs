@@ -41,7 +41,7 @@ pub struct FieldsHelper<'f, T: FieldInfo> {
     fields: Fields<&'f T>,
     filter: Option<Box<dyn Fn(usize, &T) -> bool + 'f>>,
     attributes: Option<Box<dyn Fn(usize, &T) -> Option<TokenStream> + 'f>>,
-    include_default: Vec<syn::Ident>,
+    include_default: Vec<TokenStream>,
     include_all_default: bool,
     ignore_extra: Vec<syn::Ident>,
     ignore_all_extra: bool,
@@ -91,7 +91,25 @@ impl<'f, T: FieldInfo> FieldsHelper<'f, T> {
     ///
     /// It's only used on named fields, but ignored for tuples.
     pub fn include_default<'a>(mut self, include_default: impl IntoIterator<Item = &'a syn::Ident>) -> Self {
-        let mut include_default = include_default.into_iter().cloned().collect::<Vec<_>>();
+        let mut include_default = include_default
+            .into_iter()
+            .map(|field| quote!(#field: Default::default()))
+            .collect::<Vec<_>>();
+        self.include_default.append(&mut include_default);
+        self
+    }
+
+    /// Includes default fields by including `, field1: expr1 , field2: expr2` at the end.
+    ///
+    /// It's only used on named fields, but ignored for tuples.
+    pub fn include_default_with<'a>(
+        mut self,
+        include_default: impl IntoIterator<Item = (&'a syn::Ident, impl ToTokens)>,
+    ) -> Self {
+        let mut include_default = include_default
+            .into_iter()
+            .map(|(field, expr)| quote!(#field: #expr))
+            .collect::<Vec<_>>();
         self.include_default.append(&mut include_default);
         self
     }
@@ -264,12 +282,7 @@ impl<'f, T: FieldInfo> FieldsHelper<'f, T> {
                     })
                     .collect::<Vec<_>>();
 
-                let mut include_default = self
-                    .include_default
-                    .into_iter()
-                    .map(|field| quote!(#field: Default::default()))
-                    .collect::<Vec<_>>();
-                fields.append(&mut include_default);
+                fields.append(&mut self.include_default);
 
                 let mut ignore_extra = self
                     .ignore_extra
@@ -415,6 +428,42 @@ mod tests {
             field_2: i32,
             field_3: i64,
             field_4: bool
+        });
+
+        assert_eq!(collected.to_string(), expected.to_string());
+
+        let collected = FieldsHelper::new(&fields)
+            .filtering(|_ix, f| !f.skip)
+            .right_collector(FieldsCollector::ident)
+            .include_default(fields.fields.iter().filter(|f| f.skip).filter_map(|f| f.ident.as_ref()))
+            .collect();
+        #[rustfmt::skip]
+        let expected = quote!({
+            field_1: field_1,
+            field_3: field_3,
+            field_4: field_4,
+            field_2: Default::default()
+        });
+
+        assert_eq!(collected.to_string(), expected.to_string());
+
+        let collected = FieldsHelper::new(&fields)
+            .filtering(|_ix, f| !f.skip)
+            .right_collector(FieldsCollector::ident)
+            .include_default_with(
+                fields
+                    .fields
+                    .iter()
+                    .filter(|f| f.skip)
+                    .filter_map(|f| f.ident.as_ref().map(|ident| (ident, quote!(5)))),
+            )
+            .collect();
+        #[rustfmt::skip]
+        let expected = quote!({
+            field_1: field_1,
+            field_3: field_3,
+            field_4: field_4,
+            field_2: 5
         });
 
         assert_eq!(collected.to_string(), expected.to_string());
