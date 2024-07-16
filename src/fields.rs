@@ -266,42 +266,42 @@ impl<'f, T: FieldInfo> FieldsHelper<'f, T> {
                 let mut left_collector = self.left_collector.unwrap_or_else(|| Box::new(FieldsCollector::ident));
                 let mut right_collector = self.right_collector.unwrap_or_else(|| Box::new(FieldsCollector::ty));
 
-                let mut fields = self
-                    .fields
-                    .into_iter()
-                    .enumerate()
-                    .filter(|&(ix, f)| {
-                        if let Some(filter_fn) = &mut self.filter {
-                            filter_fn(ix, f)
-                        } else {
-                            true
-                        }
-                    })
-                    .map(|(ix, f)| {
-                        let id = left_collector(ix, f);
-                        let vis = f.vis();
-                        let collected_field = right_collector(ix, f);
-                        let attrs = if let Some(attrs_fn) = &mut self.attributes {
-                            attrs_fn(ix, f)
-                        } else {
-                            None
-                        }
-                        .unwrap_or_default();
-                        if self.include_visibility {
-                            quote!(
-                                #attrs
-                                #vis #id: #collected_field
-                            )
-                        } else {
-                            quote!(
-                                #attrs
-                                #id: #collected_field
-                            )
-                        }
-                    })
-                    .collect::<Vec<_>>();
+                let mut fields = self.include_default;
 
-                fields.append(&mut self.include_default);
+                fields.extend(
+                    self.fields
+                        .into_iter()
+                        .enumerate()
+                        .filter(|&(ix, f)| {
+                            if let Some(filter_fn) = &mut self.filter {
+                                filter_fn(ix, f)
+                            } else {
+                                true
+                            }
+                        })
+                        .map(|(ix, f)| {
+                            let id = left_collector(ix, f);
+                            let vis = f.vis();
+                            let collected_field = right_collector(ix, f);
+                            let attrs = if let Some(attrs_fn) = &mut self.attributes {
+                                attrs_fn(ix, f)
+                            } else {
+                                None
+                            }
+                            .unwrap_or_default();
+                            if self.include_visibility {
+                                quote!(
+                                    #attrs
+                                    #vis #id: #collected_field
+                                )
+                            } else {
+                                quote!(
+                                    #attrs
+                                    #id: #collected_field
+                                )
+                            }
+                        }),
+                );
 
                 let mut ignore_extra = self
                     .ignore_extra
