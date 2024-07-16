@@ -105,11 +105,11 @@ impl<'v, V: VariantInfo<F>, F: FieldInfo> VariantsHelper<'v, V, F> {
         self
     }
 
-    /// Wether to ignore all extra variants with the given right side `_ => #right`.
+    /// Wether to ignore all extra variants with the given right side `_ => #right`, if [Some].
     ///
     /// It should be used only when collecting a match.
-    pub fn ignore_all_extra_variants(mut self, right_side: impl ToTokens) -> Self {
-        self.ignore_all_extra_variants = Some(right_side.to_token_stream());
+    pub fn ignore_all_extra_variants(mut self, right_side: Option<TokenStream>) -> Self {
+        self.ignore_all_extra_variants = right_side;
         self
     }
 
