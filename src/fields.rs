@@ -46,6 +46,7 @@ pub struct FieldsHelper<'f, T: FieldInfo> {
     ignore_extra: Vec<syn::Ident>,
     ignore_all_extra: bool,
     include_visibility: bool,
+    include_wrapper: bool,
     left_collector: Option<Box<dyn FnMut(usize, &T) -> TokenStream + 'f>>,
     right_collector: Option<Box<dyn FnMut(usize, &T) -> TokenStream + 'f>>,
 }
@@ -62,6 +63,7 @@ impl<'f, T: FieldInfo> FieldsHelper<'f, T> {
             ignore_extra: Vec::new(),
             ignore_all_extra: false,
             include_visibility: false,
+            include_wrapper: true,
             left_collector: None,
             right_collector: None,
         }
@@ -138,6 +140,12 @@ impl<'f, T: FieldInfo> FieldsHelper<'f, T> {
     /// Wether to include the visibility at the beginning or not, defaults to `false`.
     pub fn include_visibility(mut self, include_visibility: bool) -> Self {
         self.include_visibility = include_visibility;
+        self
+    }
+
+    /// Wether to include the wrapper (curly braces for named fields, parenthesis for tuples), defaults to `true`.
+    pub fn include_wrapper(mut self, include_wrapper: bool) -> Self {
+        self.include_wrapper = include_wrapper;
         self
     }
 
@@ -235,12 +243,23 @@ impl<'f, T: FieldInfo> FieldsHelper<'f, T> {
                             quote!( #attrs #collected_field )
                         }
                     });
+
                 if self.include_all_default {
-                    quote!( (#( #fields ),* , ..Default::default() ) ).to_tokens(&mut tokens);
+                    if self.include_wrapper {
+                        quote!( ( #( #fields ),* , ..Default::default() ) ).to_tokens(&mut tokens);
+                    } else {
+                        quote!( #( #fields ),* , ..Default::default() ).to_tokens(&mut tokens);
+                    }
                 } else if self.ignore_all_extra {
-                    quote!( (#( #fields ),* , .. ) ).to_tokens(&mut tokens);
+                    if self.include_wrapper {
+                        quote!( ( #( #fields ),* , .. ) ).to_tokens(&mut tokens);
+                    } else {
+                        quote!( #( #fields ),* , .. ).to_tokens(&mut tokens);
+                    }
+                } else if self.include_wrapper {
+                    quote!( ( #( #fields ),* ) ).to_tokens(&mut tokens);
                 } else {
-                    quote!( (#( #fields ),* ) ).to_tokens(&mut tokens);
+                    quote!( #( #fields ),* ).to_tokens(&mut tokens);
                 }
             }
             Style::Struct => {
@@ -292,11 +311,21 @@ impl<'f, T: FieldInfo> FieldsHelper<'f, T> {
                 fields.append(&mut ignore_extra);
 
                 if self.include_all_default {
-                    quote!( {#( #fields ),* , ..Default::default() } ).to_tokens(&mut tokens);
+                    if self.include_wrapper {
+                        quote!( { #( #fields ),* , ..Default::default() } ).to_tokens(&mut tokens);
+                    } else {
+                        quote!( #( #fields ),* , ..Default::default() ).to_tokens(&mut tokens);
+                    }
                 } else if self.ignore_all_extra {
-                    quote!( {#( #fields ),* , .. } ).to_tokens(&mut tokens);
+                    if self.include_wrapper {
+                        quote!( { #( #fields ),* , .. } ).to_tokens(&mut tokens);
+                    } else {
+                        quote!( #( #fields ),* , .. ).to_tokens(&mut tokens);
+                    }
+                } else if self.include_wrapper {
+                    quote!( { #( #fields ),* } ).to_tokens(&mut tokens);
                 } else {
-                    quote!( {#( #fields ),* } ).to_tokens(&mut tokens);
+                    quote!( #( #fields ),* ).to_tokens(&mut tokens);
                 }
             }
         }
@@ -334,6 +363,8 @@ impl FieldsCollector {
 
 #[cfg(test)]
 mod tests {
+    #![allow(clippy::manual_unwrap_or_default)] // darling macro
+
     use darling::FromField;
     use quote::quote;
     use syn::Result;

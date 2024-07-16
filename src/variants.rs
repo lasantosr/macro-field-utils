@@ -51,6 +51,7 @@ pub struct VariantsHelper<'v, V: VariantInfo<F>, F: FieldInfo> {
     variant_attributes: Option<Box<dyn Fn(&V) -> Option<TokenStream> + 'v>>,
     include_extra_variants: Vec<(TokenStream, Option<TokenStream>)>,
     ignore_all_extra_variants: Option<TokenStream>,
+    include_wrapper: bool,
     left_collector: Option<Box<dyn Fn(&V, FieldsHelper<'_, F>) -> TokenStream + 'v>>,
     right_collector: Option<Box<dyn Fn(&V, FieldsHelper<'_, F>) -> TokenStream + 'v>>,
 }
@@ -64,6 +65,7 @@ impl<'v, V: VariantInfo<F>, F: FieldInfo> VariantsHelper<'v, V, F> {
             variant_attributes: None,
             include_extra_variants: Vec::new(),
             ignore_all_extra_variants: None,
+            include_wrapper: true,
             left_collector: None,
             right_collector: None,
         }
@@ -108,6 +110,12 @@ impl<'v, V: VariantInfo<F>, F: FieldInfo> VariantsHelper<'v, V, F> {
     /// It should be used only when collecting a match.
     pub fn ignore_all_extra_variants(mut self, right_side: impl ToTokens) -> Self {
         self.ignore_all_extra_variants = Some(right_side.to_token_stream());
+        self
+    }
+
+    /// Wether to include the wrapper (curly braces), defaults to `true`.
+    pub fn include_wrapper(mut self, include_wrapper: bool) -> Self {
+        self.include_wrapper = include_wrapper;
         self
     }
 
@@ -210,11 +218,15 @@ impl<'v, V: VariantInfo<F>, F: FieldInfo> VariantsHelper<'v, V, F> {
             variants.push(quote!(_ => #right));
         }
 
-        quote!(
-            {
-                #( #variants ),*
-            }
-        )
+        if self.include_wrapper {
+            quote!(
+                {
+                    #( #variants ),*
+                }
+            )
+        } else {
+            quote!( #( #variants ),* )
+        }
     }
 }
 
@@ -289,6 +301,8 @@ impl VariantsCollector {
 
 #[cfg(test)]
 mod tests {
+    #![allow(clippy::manual_unwrap_or_default)] // darling macro
+
     use darling::{FromField, FromVariant};
     use quote::quote;
     use syn::Result;
