@@ -41,7 +41,7 @@ pub struct FieldsHelper<'f, T: FieldInfo> {
     fields: Fields<&'f T>,
     filter: Option<Box<dyn Fn(usize, &T) -> bool + 'f>>,
     attributes: Option<Box<dyn Fn(usize, &T) -> Option<TokenStream> + 'f>>,
-    include_default: Vec<TokenStream>,
+    extra_fields: Vec<TokenStream>,
     include_all_default: bool,
     ignore_extra: Vec<syn::Ident>,
     ignore_all_extra: bool,
@@ -58,7 +58,7 @@ impl<'f, T: FieldInfo> FieldsHelper<'f, T> {
             fields: fields.as_ref(),
             filter: None,
             attributes: None,
-            include_default: Vec::new(),
+            extra_fields: Vec::new(),
             include_all_default: false,
             ignore_extra: Vec::new(),
             ignore_all_extra: false,
@@ -89,36 +89,39 @@ impl<'f, T: FieldInfo> FieldsHelper<'f, T> {
         self
     }
 
-    /// Includes default fields by including `, field1: Default::default() , field2: Default::default()` at the end.
+    /// Includes additional default fields by including `field1: Default::default(), field2: Default::default(),`
     ///
     /// It's only used on named fields, but ignored for tuples.
-    pub fn include_default<'a>(mut self, include_default: impl IntoIterator<Item = &'a syn::Ident>) -> Self {
-        let mut include_default = include_default
+    pub fn extra_default_fields<'a>(mut self, fields: impl IntoIterator<Item = &'a syn::Ident>) -> Self {
+        let mut default_fields = fields
             .into_iter()
             .map(|field| quote!(#field: Default::default()))
             .collect::<Vec<_>>();
-        self.include_default.append(&mut include_default);
+        self.extra_fields.append(&mut default_fields);
         self
     }
 
-    /// Includes default fields by including `, field1: expr1 , field2: expr2` at the end.
+    /// Includes additional fields by including `field1: field1, field2: field2,`
     ///
     /// It's only used on named fields, but ignored for tuples.
-    pub fn include_default_with<'a>(
-        mut self,
-        include_default: impl IntoIterator<Item = (&'a syn::Ident, impl ToTokens)>,
-    ) -> Self {
-        let mut include_default = include_default
+    pub fn extra_fields<'a>(mut self, fields: impl IntoIterator<Item = &'a syn::Ident>) -> Self {
+        let mut additional_fields = fields
+            .into_iter()
+            .map(|field| quote!(#field: #field))
+            .collect::<Vec<_>>();
+        self.extra_fields.append(&mut additional_fields);
+        self
+    }
+
+    /// Includes additional fields by including `field1: expr1, field2: expr2`.
+    ///
+    /// It's only used on named fields, but ignored for tuples.
+    pub fn extra_fields_with<'a>(mut self, fields: impl IntoIterator<Item = (&'a syn::Ident, impl ToTokens)>) -> Self {
+        let mut additional_fields = fields
             .into_iter()
             .map(|(field, expr)| quote!(#field: #expr))
             .collect::<Vec<_>>();
-        self.include_default.append(&mut include_default);
-        self
-    }
-
-    /// Wether to include `, ..Default::default()` at the end or not, defaults to `false`.
-    pub fn include_all_default(mut self, include_all_default: bool) -> Self {
-        self.include_all_default = include_all_default;
+        self.extra_fields.append(&mut additional_fields);
         self
     }
 
@@ -134,6 +137,12 @@ impl<'f, T: FieldInfo> FieldsHelper<'f, T> {
     /// Wether to include `, ..` at the end or not, defaults to `false`.
     pub fn ignore_all_extra(mut self, ignore_all_extra: bool) -> Self {
         self.ignore_all_extra = ignore_all_extra;
+        self
+    }
+
+    /// Wether to include `, ..Default::default()` at the end or not, defaults to `false`.
+    pub fn include_all_default(mut self, include_all_default: bool) -> Self {
+        self.include_all_default = include_all_default;
         self
     }
 
@@ -266,7 +275,7 @@ impl<'f, T: FieldInfo> FieldsHelper<'f, T> {
                 let mut left_collector = self.left_collector.unwrap_or_else(|| Box::new(FieldsCollector::ident));
                 let mut right_collector = self.right_collector.unwrap_or_else(|| Box::new(FieldsCollector::ty));
 
-                let mut fields = self.include_default;
+                let mut fields = self.extra_fields;
 
                 fields.extend(
                     self.fields
@@ -466,14 +475,14 @@ mod tests {
         let collected = FieldsHelper::new(&fields)
             .filtering(|_ix, f| !f.skip)
             .right_collector(FieldsCollector::ident)
-            .include_default(fields.fields.iter().filter(|f| f.skip).filter_map(|f| f.ident.as_ref()))
+            .extra_default_fields(fields.fields.iter().filter(|f| f.skip).filter_map(|f| f.ident.as_ref()))
             .collect();
         #[rustfmt::skip]
         let expected = quote!({
+            field_2: Default::default(),
             field_1: field_1,
             field_3: field_3,
-            field_4: field_4,
-            field_2: Default::default()
+            field_4: field_4
         });
 
         assert_eq!(collected.to_string(), expected.to_string());
@@ -481,7 +490,22 @@ mod tests {
         let collected = FieldsHelper::new(&fields)
             .filtering(|_ix, f| !f.skip)
             .right_collector(FieldsCollector::ident)
-            .include_default_with(
+            .extra_fields(fields.fields.iter().filter(|f| f.skip).filter_map(|f| f.ident.as_ref()))
+            .collect();
+        #[rustfmt::skip]
+        let expected = quote!({
+            field_2: field_2,
+            field_1: field_1,
+            field_3: field_3,
+            field_4: field_4
+        });
+
+        assert_eq!(collected.to_string(), expected.to_string());
+
+        let collected = FieldsHelper::new(&fields)
+            .filtering(|_ix, f| !f.skip)
+            .right_collector(FieldsCollector::ident)
+            .extra_fields_with(
                 fields
                     .fields
                     .iter()
@@ -491,10 +515,10 @@ mod tests {
             .collect();
         #[rustfmt::skip]
         let expected = quote!({
+            field_2: 5,
             field_1: field_1,
             field_3: field_3,
-            field_4: field_4,
-            field_2: 5
+            field_4: field_4
         });
 
         assert_eq!(collected.to_string(), expected.to_string());
